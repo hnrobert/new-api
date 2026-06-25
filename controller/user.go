@@ -585,14 +585,11 @@ func GetUserModels(c *gin.Context) {
 		return
 	}
 	groups := service.GetUserUsableGroups(user.Group)
-	var models []string
-	for group := range groups {
-		for _, g := range model.GetGroupEnabledModels(group) {
-			if !common.StringsContains(models, g) {
-				models = append(models, g)
-			}
-		}
+	groupKeys := make([]string, 0, len(groups))
+	for g := range groups {
+		groupKeys = append(groupKeys, g)
 	}
+	models := model.GetGroupEnabledModelsForUser(groupKeys, id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

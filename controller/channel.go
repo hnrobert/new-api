@@ -476,6 +476,11 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	// per-user 授权：归一化 user_ids（去空白、去重、校验为合法整数，空串归一化为 ""）。
+	if err := normalizeUserIds(channel); err != nil {
+		return err
+	}
+
 	// VertexAI 特殊校验
 	if channel.Type == constant.ChannelTypeVertexAi {
 		if channel.Other == "" {
@@ -512,6 +517,41 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	return nil
+}
+
+// normalizeUserIds 规范化渠道的 per-user 授权字段 UserIds：
+//   - 去除空白、去重；
+//   - 每段必须为合法正整数用户 ID，否则报错；
+//   - 空输入（空串或全空白）归一化为 ""，表示不限制。
+func normalizeUserIds(channel *model.Channel) error {
+	if channel == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(channel.UserIds)
+	if trimmed == "" {
+		channel.UserIds = ""
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	seen := make(map[int]struct{}, len(parts))
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.Atoi(part)
+		if err != nil || id <= 0 {
+			return fmt.Errorf("user_ids 包含非法的用户 ID: %s", part)
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, part)
+	}
+	channel.UserIds = strings.Join(ids, ",")
 	return nil
 }
 

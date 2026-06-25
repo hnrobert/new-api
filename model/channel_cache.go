@@ -105,10 +105,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string, userId int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannel(group, model, retry, requestPath, userId)
 	}
 
 	channelSyncLock.RLock()
@@ -122,6 +122,9 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = filterChannelsByRequestPath(group2model2channels[group][normalizedModel], requestPath)
 	}
+
+	// Drop channels whose per-user restriction excludes the current user.
+	channels = filterChannelsByUser(channels, userId)
 
 	if len(channels) == 0 {
 		return nil, nil
@@ -224,6 +227,38 @@ func filterChannelsByRequestPath(channels []int, requestPath string) []int {
 			continue
 		}
 		if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPath(requestPath) {
+			filtered = append(filtered, channelId)
+		}
+	}
+	return filtered
+}
+
+// filterChannelsByUser drops channels whose per-user authorization excludes userId.
+// Channels without per-user restriction always pass. Caller must hold channelSyncLock.
+func filterChannelsByUser(channels []int, userId int) []int {
+	if len(channels) == 0 {
+		return channels
+	}
+	// 快速路径：未设任何 per-user 限制时直接返回，避免分配。
+	restricted := false
+	for _, channelId := range channels {
+		if channel, ok := channelsIDM[channelId]; ok && channel.IsUserRestricted() {
+			restricted = true
+			break
+		}
+	}
+	if !restricted {
+		return channels
+	}
+	filtered := make([]int, 0, len(channels))
+	for _, channelId := range channels {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
+			// 保留以便下游照常抛出一致性错误
+			filtered = append(filtered, channelId)
+			continue
+		}
+		if channel.IsUserAllowed(userId) {
 			filtered = append(filtered, channelId)
 		}
 	}

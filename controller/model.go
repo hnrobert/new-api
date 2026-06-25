@@ -245,18 +245,12 @@ func ListModels(c *gin.Context, modelType int) {
 			userModelNames = append(userModelNames, allowModel)
 		}
 	} else {
+		userId := c.GetInt("id")
 		var models []string
 		if groups.tokenGroup == "auto" {
-			for _, autoGroup := range ownerGroups {
-				groupModels := model.GetGroupEnabledModels(autoGroup)
-				for _, g := range groupModels {
-					if !common.StringsContains(models, g) {
-						models = append(models, g)
-					}
-				}
-			}
+			models = model.GetGroupEnabledModelsForUser(ownerGroups, userId)
 		} else {
-			models = model.GetGroupEnabledModels(ownerGroups[0])
+			models = model.GetGroupEnabledModelsForUser([]string{ownerGroups[0]}, userId)
 		}
 		for _, modelName := range models {
 			if !acceptUnsetRatioModel {

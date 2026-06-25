@@ -33,6 +33,30 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 	return filtered
 }
 
+// filterPricingByUserAccess 在分组过滤之上再做 per-user 过滤：若某模型在用户可用分组里的
+// 所有启用渠道都被 per-user 授权挡住（即该用户一个都用不了），则从定价列表中隐藏。
+// userId<=0（匿名/管理端）时不做过滤。
+func filterPricingByUserAccess(pricing []model.Pricing, usableGroup map[string]string, userId int) []model.Pricing {
+	if len(pricing) == 0 || userId <= 0 || len(usableGroup) == 0 {
+		return pricing
+	}
+	groupKeys := make([]string, 0, len(usableGroup))
+	for g := range usableGroup {
+		groupKeys = append(groupKeys, g)
+	}
+	allowed := make(map[string]struct{}, len(pricing))
+	for _, m := range model.GetGroupEnabledModelsForUser(groupKeys, userId) {
+		allowed[m] = struct{}{}
+	}
+	filtered := make([]model.Pricing, 0, len(pricing))
+	for _, item := range pricing {
+		if _, ok := allowed[item.ModelName]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
 func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
@@ -57,6 +81,9 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	if exists {
+		pricing = filterPricingByUserAccess(pricing, usableGroup, userId.(int))
+	}
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -38,6 +39,9 @@ type Channel struct {
 	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
+	// UserIds 限定该渠道仅授权给这些用户（逗号分隔的用户 ID）。为空时不限制，沿用 group 行为；
+	// 非空时仅这些用户可用，从而无需为某个用户单独建分组即可实现 per-user 渠道授权。
+	UserIds string `json:"user_ids" gorm:"type:varchar(1024);default:''"`
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
@@ -302,6 +306,54 @@ func (channel *Channel) GetGroups() []string {
 		groups[i] = strings.TrimSpace(group)
 	}
 	return groups
+}
+
+// GetUserIds 解析 UserIds 逗号串为去重的用户 ID 列表。空串返回空切片。
+func (channel *Channel) GetUserIds() []int {
+	if channel.UserIds == "" {
+		return []int{}
+	}
+	parts := strings.Split(strings.Trim(channel.UserIds, ","), ",")
+	seen := make(map[int]struct{}, len(parts))
+	userIds := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		userId, err := strconv.Atoi(part)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[userId]; exists {
+			continue
+		}
+		seen[userId] = struct{}{}
+		userIds = append(userIds, userId)
+	}
+	return userIds
+}
+
+// IsUserRestricted 是否设了 per-user 授权限制（UserIds 非空）。
+func (channel *Channel) IsUserRestricted() bool {
+	return strings.TrimSpace(channel.UserIds) != ""
+}
+
+// IsUserAllowed 判断 userId 是否可使用该渠道。
+// 未设限制时对所有人开放；设了限制时仅授权用户可用，匿名用户（userId<=0）一律拒绝。
+func (channel *Channel) IsUserAllowed(userId int) bool {
+	if !channel.IsUserRestricted() {
+		return true
+	}
+	if userId <= 0 {
+		return false
+	}
+	for _, id := range channel.GetUserIds() {
+		if id == userId {
+			return true
+		}
+	}
+	return false
 }
 
 func (channel *Channel) GetOtherInfo() map[string]interface{} {

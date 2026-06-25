@@ -183,6 +183,7 @@ const EditChannelModal = (props) => {
     auto_ban: 1,
     test_model: '',
     groups: ['default'],
+    userIds: [],
     priority: 0,
     weight: 0,
     tag: '',
@@ -223,6 +224,8 @@ const EditChannelModal = (props) => {
   const [originModelOptions, setOriginModelOptions] = useState([]);
   const [modelOptions, setModelOptions] = useState([]);
   const [groupOptions, setGroupOptions] = useState([]);
+  const [userOptions, setUserOptions] = useState([]);
+  const userSearchLock = useRef(0);
   const [basicModels, setBasicModels] = useState([]);
   const [fullModels, setFullModels] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
@@ -835,6 +838,10 @@ const EditChannelModal = (props) => {
       } else {
         data.groups = data.group.split(',');
       }
+      data.userIds = (data.user_ids || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
       if (data.model_mapping !== '') {
         data.model_mapping = JSON.stringify(
           JSON.parse(data.model_mapping),
@@ -1184,6 +1191,31 @@ const EditChannelModal = (props) => {
       );
     } catch (error) {
       showError(error.message);
+    }
+  };
+
+  // 按关键字搜索用户，填充「指定用户」多选选项（GET /api/user/search，管理员接口）
+  const searchChannelUsers = async (keyword) => {
+    const kw = (keyword || '').trim();
+    const stamp = ++userSearchLock.current;
+    if (!kw) {
+      setUserOptions([]);
+      return;
+    }
+    try {
+      const res = await API.get(
+        `/api/user/search?keyword=${encodeURIComponent(kw)}&p=1&page_size=20`,
+      );
+      if (stamp !== userSearchLock.current) return;
+      const items = res?.data?.data?.items || [];
+      setUserOptions(
+        items.map((u) => ({
+          value: String(u.id),
+          label: `${u.display_name || u.username || '#'.concat(u.id)} (#${u.id})`,
+        })),
+      );
+    } catch (error) {
+      // 忽略搜索错误
     }
   };
 
@@ -1851,6 +1883,7 @@ const EditChannelModal = (props) => {
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
     localInputs.models = localInputs.models.join(',');
     localInputs.group = (localInputs.groups || []).join(',');
+    localInputs.user_ids = (localInputs.userIds || []).join(',');
 
     let mode = 'single';
     if (batch) {
@@ -3568,6 +3601,23 @@ const EditChannelModal = (props) => {
                     style={{ width: '100%' }}
                     position='top'
                     onChange={(value) => handleInputChange('groups', value)}
+                  />
+
+                  {/* Authorized Users - per-user channel access (optional) */}
+                  <Form.Select
+                    field='userIds'
+                    label={t('指定用户')}
+                    placeholder={t(
+                      '留空则所选分组内所有用户可用；选择/输入用户 ID 仅授权这些用户',
+                    )}
+                    multiple
+                    allowAdditions
+                    filter
+                    onSearch={(value) => searchChannelUsers(value)}
+                    optionList={userOptions}
+                    style={{ width: '100%' }}
+                    position='top'
+                    onChange={(value) => handleInputChange('userIds', value)}
                   />
 
                   {/* Model Mapping - Core Config */}

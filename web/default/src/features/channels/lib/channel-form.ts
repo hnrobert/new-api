@@ -136,6 +136,8 @@ export const channelFormSchema = z
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
     group: z.array(z.string()).min(1, ERROR_MESSAGES.REQUIRED_GROUP),
+    // per-user 授权：限定该渠道仅这些用户可用（空数组=不限制）
+    userIds: z.array(z.number()),
     model_mapping: z
       .string()
       .optional()
@@ -304,6 +306,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   openai_organization: '',
   models: '',
   group: ['default'],
+  userIds: [],
   model_mapping: '',
   priority: 0,
   weight: 0,
@@ -442,6 +445,7 @@ export function transformChannelToFormDefaults(
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
     group: parseGroups(channel.group || 'default'),
+    userIds: parseUserIds(channel.user_ids),
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
@@ -641,6 +645,7 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     openai_organization: formData.openai_organization || null,
     models: formData.models,
     group: formatGroups(formData.group),
+    user_ids: formatUserIds(formData.userIds),
     model_mapping: formData.model_mapping || null,
     priority: formData.priority || null,
     weight: formData.weight || null,
@@ -689,6 +694,7 @@ export function transformFormDataToUpdatePayload(
     openai_organization: formData.openai_organization || null,
     models: formData.models,
     group: formatGroups(formData.group),
+    user_ids: formatUserIds(formData.userIds),
     model_mapping: formData.model_mapping || null,
     priority: formData.priority ?? 0,
     weight: formData.weight ?? 0,
@@ -790,4 +796,24 @@ export function formatModels(models: string[]): string {
  */
 export function formatGroups(groups: string[]): string {
   return groups.join(',')
+}
+
+/**
+ * Parse comma-separated user_ids string to number array.
+ */
+export function parseUserIds(userIds: string | undefined | null): number[] {
+  if (!userIds) return []
+  return userIds
+    .split(',')
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0)
+    .map((u) => Number(u))
+    .filter((u) => !Number.isNaN(u))
+}
+
+/**
+ * Format user id array to comma-separated string (empty array => '').
+ */
+export function formatUserIds(userIds: number[]): string {
+  return userIds.join(',')
 }

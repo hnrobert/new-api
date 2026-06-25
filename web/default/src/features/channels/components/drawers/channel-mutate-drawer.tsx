@@ -100,6 +100,7 @@ import {
 } from '@/components/drawer-layout'
 import { JsonEditor } from '@/components/json-editor'
 import { MultiSelect } from '@/components/multi-select'
+import { UserMultiSelect } from '../user-multi-select'
 import {
   SecureVerificationDialog,
   useSecureVerification,
@@ -2543,6 +2544,33 @@ export function ChannelMutateDrawer({
                                     placeholder={t(FIELD_PLACEHOLDERS.GROUP)}
                                   />
                                 )}
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className='border-border/60 rounded-lg border p-4'>
+                        <FormField
+                          control={form.control}
+                          name='userIds'
+                          render={({ field }) => (
+                            <FormItem className='space-y-3'>
+                              <div className='space-y-1'>
+                                <FormLabel>{t('Authorized Users')}</FormLabel>
+                                <FormDescription>
+                                  {t(
+                                    'Restrict this channel to specific users (by user ID). Leave empty to allow all users in the selected groups.'
+                                  )}
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <UserMultiSelect
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  id='channel-user-ids'
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>

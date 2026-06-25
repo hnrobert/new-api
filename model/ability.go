@@ -41,10 +41,7 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 }
 
 func GetGroupEnabledModels(group string) []string {
-	var models []string
-	// Find distinct models
-	DB.Table("abilities").Where(commonGroupCol+" = ? and enabled = ?", group, true).Distinct("model").Pluck("model", &models)
-	return models
+	return GetGroupEnabledModelsForUser([]string{group}, 0)
 }
 
 func GetEnabledModels() []string {
@@ -105,7 +102,7 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetChannel(group string, model string, retry int, requestPath string, userId int) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -121,7 +118,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 	if err != nil {
 		return nil, err
 	}
-	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+	abilities = filterAbilities(abilities, requestPath, userId)
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one
@@ -146,13 +143,37 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 	return &channel, err
 }
 
-// filterAbilitiesByRequestPath restricts candidates by request path for the DB
-// (non-memory-cache) selection path. Only Advanced Custom (type 58) channels are
-// path-checked: kept only when one of their routes matches requestPath; all other
-// channel types always pass. When requestPath is empty, filtering is skipped.
-func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Ability {
-	if requestPath == "" || len(abilities) == 0 {
+// filterAbilities restricts DB-path selection candidates by request path and per-user
+// authorization. It loads the candidate channels once and applies both filters in a
+// single pass:
+//
+//   - Request path: only Advanced Custom (type 58) channels are path-checked; all other
+//     channel types always pass. Skipped when requestPath is empty.
+//   - Per-user: channels with a non-empty UserIds are kept only when userId is authorized;
+//     channels without per-user restriction always pass. Applied for all channel types.
+//
+// When neither filter is active (requestPath empty and no restricted channel among the
+// candidates), the slice is returned unchanged to avoid a DB hit.
+func filterAbilities(abilities []Ability, requestPath string, userId int) []Ability {
+	if len(abilities) == 0 {
 		return abilities
+	}
+
+	needPathFilter := requestPath != ""
+
+	// If neither path nor user filtering applies, skip the channel load entirely.
+	if !needPathFilter {
+		// user 过滤仅在存在受限渠道时才需要；无受限渠道则原样返回。
+		restricted := false
+		// 此时无法在不加载 channels 的情况下判断，但 user 过滤的常见场景是 requestPath 非空
+		// （relay 路径总会带 path）。为保持正确性，当 userId>0 时仍走下面的统一加载逻辑；
+		// userId<=0（管理端/非 relay 调用）时直接返回。
+		if userId > 0 {
+			restricted = true // 交由统一加载逻辑判定
+		}
+		if !restricted {
+			return abilities
+		}
 	}
 
 	channelIds := make([]int, 0, len(abilities))
@@ -172,24 +193,69 @@ func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Abi
 	}
 
 	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
+	channelById := make(map[int]*Channel, len(channels))
 	for _, channel := range channels {
-		if channel.Type == constant.ChannelTypeAdvancedCustom {
+		channelById[channel.Id] = channel
+		if needPathFilter && channel.Type == constant.ChannelTypeAdvancedCustom {
 			advancedConfigs[channel.Id] = channel.GetOtherSettings().AdvancedCustom
 		}
 	}
 
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
-		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
-		if !isAdvancedCustom {
-			filtered = append(filtered, ability)
+		channel := channelById[ability.ChannelId]
+		// per-user 授权检查（对所有渠道类型生效）
+		if channel != nil && !channel.IsUserAllowed(userId) {
 			continue
 		}
-		if config != nil && config.SupportsPath(requestPath) {
-			filtered = append(filtered, ability)
+		if needPathFilter {
+			config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
+			if isAdvancedCustom {
+				if config == nil || !config.SupportsPath(requestPath) {
+					continue
+				}
+			}
 		}
+		filtered = append(filtered, ability)
 	}
 	return filtered
+}
+
+func GetGroupEnabledModelsForUser(groups []string, userId int) []string {
+	if len(groups) == 0 {
+		return []string{}
+	}
+	// userId<=0（管理端/内部调用）不做 per-user 过滤，直接 distinct。
+	if userId <= 0 {
+		var models []string
+		DB.Table("abilities").
+			Where("enabled = ? and "+commonGroupCol+" in ?", true, groups).
+			Distinct("model").Pluck("model", &models)
+		return models
+	}
+	// userId>0：join channels 取 user_ids，在 Go 里按 per-user 授权过滤后再 distinct。
+	// 跨库安全：仅用 JOIN+WHERE+IN，不使用任何 SQL 字符串包含函数。
+	type abilityModelRow struct {
+		Model   string
+		UserIds string
+	}
+	var rows []abilityModelRow
+	DB.Table("abilities").
+		Select("abilities.model, channels.user_ids").
+		Joins("left join channels on abilities.channel_id = channels.id").
+		Where("abilities.enabled = ? and abilities."+commonGroupCol+" in ?", true, groups).
+		Scan(&rows)
+	allowed := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		if (&Channel{UserIds: r.UserIds}).IsUserAllowed(userId) {
+			allowed[r.Model] = struct{}{}
+		}
+	}
+	models := make([]string, 0, len(allowed))
+	for m := range allowed {
+		models = append(models, m)
+	}
+	return models
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
