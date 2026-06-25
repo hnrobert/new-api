@@ -47,10 +47,23 @@
   <a href="#-主要特性">主要特性</a> •
   <a href="#-部署">部署</a> •
   <a href="#-文档">文档</a> •
+  <a href="#-本分支相比上游新增">本分支新增</a> •
   <a href="#-帮助支持">帮助</a>
 </p>
 
 </div>
+
+## 🌟 本分支相比上游新增
+
+> 本仓库基于上游 `new-api` 的 `feat/image-aware-model-routing` 分支，在 `main` 基础上新增了以下变更（50 个文件，+1997 / -59 行）。完整说明见 [docs/branch-overview.md](./docs/branch-overview.md)。
+
+- **✨ 图片感知模型路由**：配置一个虚拟入口模型名（如 `auto-coder`），网关按当前轮最后一条 user 消息是否含图片，自动路由到视觉模型或编程模型，对客户端透明、网关无状态。详见 [docs/image-aware-routing.md](./docs/image-aware-routing.md)。
+- **✨ 渠道按用户授权**：在「按分组授权」之外新增「按用户授权」维度，渠道可指定一组用户（`user_ids`）专用，无需为单个用户单独建分组。非授权用户在选渠道、`/v1/models`、`/api/user/models`、`/api/pricing` 四条链路均被屏蔽。详见 [docs/per-user-channel-access.md](./docs/per-user-channel-access.md)。
+- **🔧 CI/CD**：Docker 镜像发布到 GHCR、按架构并行构建、新增内嵌前端的全量镜像（单端口 `:3000`）。
+
+**验证状态**：后端 `go build` / `go vet` / 相关包 `go test` 全绿；两项新功能均经本地端到端实测。
+
+---
 
 ## 📝 项目说明
 

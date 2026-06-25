@@ -47,10 +47,23 @@
   <a href="#-key-features">Key Features</a> •
   <a href="#-deployment">Deployment</a> •
   <a href="#-documentation">Documentation</a> •
+  <a href="#-whats-new-in-this-branch">What's new</a> •
   <a href="#-help-support">Help</a>
 </p>
 
 </div>
+
+## 🌟 What's new in this branch
+
+> This repo is based on upstream `new-api` branch `feat/image-aware-model-routing` and adds the following on top of `main` (50 files, +1997 / -59 lines). Full overview: [docs/branch-overview.md](./docs/branch-overview.md).
+
+- **Image-aware model routing**: configure a virtual entry model name (e.g. `auto-coder`); the gateway routes to a vision or coding model based on whether the last user message contains an image — transparent to clients, stateless. See [docs/image-aware-routing.md](./docs/image-aware-routing.md) (Chinese).
+- **Per-user channel access**: a new "by user" authorization dimension alongside groups. A channel can be restricted to a set of users (`user_ids`) without creating a dedicated group; unauthorized users are hidden from channel selection, `/v1/models`, `/api/user/models`, and `/api/pricing`. See [docs/per-user-channel-access.md](./docs/per-user-channel-access.md) (Chinese).
+- **CI/CD**: Docker images published to GHCR, per-arch parallel builds, and a new full image with the frontend embedded (single `:3000` port).
+
+**Verification**: backend `go build` / `go vet` / relevant package `go test` all green; both features verified end-to-end locally.
+
+---
 
 ## 📝 Project Description
 
